@@ -9,5 +9,6 @@ export const config = {
   routerPass: process.env.ROUTER_PASS || '',
   pocketbaseUrl: process.env.POCKETBASE_URL || '',
   pollIntervalMs: parseInt(process.env.POLL_INTERVAL_MS || '30000', 10),
+  disconnectGracePolls: parseInt(process.env.DISCONNECT_GRACE_POLLS || '3', 10),
   frontendUrl: process.env.FRONTEND_URL || ''
 };

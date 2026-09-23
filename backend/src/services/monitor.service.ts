@@ -6,6 +6,8 @@ import { MonitorStatus, ScrapedDevice } from '../types/index.js';
 interface ActiveDeviceSession {
   device: ScrapedDevice;
   connectedAt: number;
+  lastSeenAt: number;
+  missedPolls: number;
 }
 
 export class MonitorService {
@@ -40,6 +42,7 @@ export class MonitorService {
       for (const d of knownDevices) {
         if (d.is_online) {
           const connectedTime = d.last_connected_at ? new Date(d.last_connected_at).getTime() : Date.now();
+          const lastSeenTime = d.last_seen_at ? new Date(d.last_seen_at).getTime() : Date.now();
           this.activeDevices.set(d.mac, {
             device: {
               mac: d.mac,
@@ -48,7 +51,9 @@ export class MonitorService {
               connection_type: d.connection_type,
               comments: ''
             },
-            connectedAt: isNaN(connectedTime) ? Date.now() : connectedTime
+            connectedAt: isNaN(connectedTime) ? Date.now() : connectedTime,
+            lastSeenAt: isNaN(lastSeenTime) ? Date.now() : lastSeenTime,
+            missedPolls: 0
           });
         }
       }
@@ -60,7 +65,9 @@ export class MonitorService {
     try {
       const currentDevices = await routerService.getOnlineDevices();
       this.routerReachable = true;
-      this.lastPollAt = new Date().toISOString();
+      const nowTime = Date.now();
+      const isoNow = new Date(nowTime).toISOString();
+      this.lastPollAt = isoNow;
       const currentMacs = new Set<string>();
 
       for (const dev of currentDevices) {
@@ -68,11 +75,11 @@ export class MonitorService {
         const existingSession = this.activeDevices.get(dev.mac);
 
         if (!existingSession) {
-          const nowTime = Date.now();
-          const isoNow = new Date(nowTime).toISOString();
           this.activeDevices.set(dev.mac, {
             device: dev,
-            connectedAt: nowTime
+            connectedAt: nowTime,
+            lastSeenAt: nowTime,
+            missedPolls: 0
           });
 
           await pocketbaseService.upsertDevice({
@@ -97,46 +104,54 @@ export class MonitorService {
           }
         } else {
           existingSession.device = dev;
+          existingSession.lastSeenAt = nowTime;
+          existingSession.missedPolls = 0;
+
           await pocketbaseService.upsertDevice({
             mac: dev.mac,
             name: dev.name,
             ip: dev.ip,
             connection_type: dev.connection_type,
             is_online: true,
-            last_seen_at: new Date().toISOString()
+            last_seen_at: isoNow
           });
         }
       }
 
+      const graceLimit = Math.max(1, config.disconnectGracePolls);
+
       for (const [mac, session] of this.activeDevices.entries()) {
         if (!currentMacs.has(mac)) {
-          const nowTime = Date.now();
-          const isoNow = new Date(nowTime).toISOString();
-          const duration = Math.max(0, Math.round((nowTime - session.connectedAt) / 1000));
+          session.missedPolls += 1;
 
-          await pocketbaseService.upsertDevice({
-            mac,
-            name: session.device.name,
-            ip: session.device.ip,
-            connection_type: session.device.connection_type,
-            is_online: false,
-            last_disconnected_at: isoNow,
-            last_seen_at: isoNow
-          });
+          if (session.missedPolls >= graceLimit) {
+            const lastSeenIso = new Date(session.lastSeenAt).toISOString();
+            const duration = Math.max(0, Math.round((session.lastSeenAt - session.connectedAt) / 1000));
 
-          if (!this.isFirstRun) {
-            await pocketbaseService.recordLog({
+            await pocketbaseService.upsertDevice({
               mac,
               name: session.device.name,
               ip: session.device.ip,
               connection_type: session.device.connection_type,
-              event_type: 'disconnected',
-              timestamp: isoNow,
-              session_duration: duration
+              is_online: false,
+              last_disconnected_at: lastSeenIso,
+              last_seen_at: lastSeenIso
             });
-          }
 
-          this.activeDevices.delete(mac);
+            if (!this.isFirstRun) {
+              await pocketbaseService.recordLog({
+                mac,
+                name: session.device.name,
+                ip: session.device.ip,
+                connection_type: session.device.connection_type,
+                event_type: 'disconnected',
+                timestamp: lastSeenIso,
+                session_duration: duration
+              });
+            }
+
+            this.activeDevices.delete(mac);
+          }
         }
       }
 
