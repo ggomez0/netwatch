@@ -5,13 +5,17 @@ import { MonitorStatus, ScrapedDevice } from '../types/index.js';
 
 interface ActiveDeviceSession {
   device: ScrapedDevice;
+  deviceId: string;
   connectedAt: number;
   lastSeenAt: number;
+  lastSyncedAt: number;
   missedPolls: number;
 }
 
 export class MonitorService {
   private activeDevices: Map<string, ActiveDeviceSession> = new Map();
+  private deviceIdMap: Map<string, string> = new Map();
+  private totalDevicesCount = 0;
   private intervalId: NodeJS.Timeout | null = null;
   private isRunning = false;
   private lastPollAt: string | null = null;
@@ -39,7 +43,9 @@ export class MonitorService {
   private async initActiveDevices(): Promise<void> {
     try {
       const knownDevices = await pocketbaseService.getAllDevices();
+      this.totalDevicesCount = knownDevices.length;
       for (const d of knownDevices) {
+        this.deviceIdMap.set(d.mac, d.id);
         if (d.is_online) {
           const connectedTime = d.last_connected_at ? new Date(d.last_connected_at).getTime() : Date.now();
           const lastSeenTime = d.last_seen_at ? new Date(d.last_seen_at).getTime() : Date.now();
@@ -51,8 +57,10 @@ export class MonitorService {
               connection_type: d.connection_type,
               comments: ''
             },
+            deviceId: d.id,
             connectedAt: isNaN(connectedTime) ? Date.now() : connectedTime,
             lastSeenAt: isNaN(lastSeenTime) ? Date.now() : lastSeenTime,
+            lastSyncedAt: Date.now(),
             missedPolls: 0
           });
         }
@@ -75,21 +83,39 @@ export class MonitorService {
         const existingSession = this.activeDevices.get(dev.mac);
 
         if (!existingSession) {
+          let deviceId = this.deviceIdMap.get(dev.mac);
+
+          if (deviceId) {
+            await pocketbaseService.updateDevice(deviceId, {
+              is_online: true,
+              last_connected_at: isoNow,
+              last_seen_at: isoNow,
+              ip: dev.ip,
+              connection_type: dev.connection_type,
+              name: dev.name
+            });
+          } else {
+            const created = await pocketbaseService.upsertDevice({
+              mac: dev.mac,
+              name: dev.name,
+              ip: dev.ip,
+              connection_type: dev.connection_type,
+              is_online: true,
+              last_connected_at: isoNow,
+              last_seen_at: isoNow
+            });
+            deviceId = created.id;
+            this.deviceIdMap.set(dev.mac, deviceId);
+            this.totalDevicesCount += 1;
+          }
+
           this.activeDevices.set(dev.mac, {
             device: dev,
+            deviceId: deviceId || '',
             connectedAt: nowTime,
             lastSeenAt: nowTime,
+            lastSyncedAt: nowTime,
             missedPolls: 0
-          });
-
-          await pocketbaseService.upsertDevice({
-            mac: dev.mac,
-            name: dev.name,
-            ip: dev.ip,
-            connection_type: dev.connection_type,
-            is_online: true,
-            last_connected_at: isoNow,
-            last_seen_at: isoNow
           });
 
           if (!this.isFirstRun) {
@@ -103,18 +129,26 @@ export class MonitorService {
             });
           }
         } else {
-          existingSession.device = dev;
           existingSession.lastSeenAt = nowTime;
           existingSession.missedPolls = 0;
 
-          await pocketbaseService.upsertDevice({
-            mac: dev.mac,
-            name: dev.name,
-            ip: dev.ip,
-            connection_type: dev.connection_type,
-            is_online: true,
-            last_seen_at: isoNow
-          });
+          const ipChanged = dev.ip && dev.ip !== existingSession.device.ip;
+          const nameChanged = dev.name && dev.name !== existingSession.device.name && dev.name !== 'Dispositivo sin nombre';
+          const typeChanged = dev.connection_type && dev.connection_type !== existingSession.device.connection_type;
+          const periodicHeartbeat = (nowTime - existingSession.lastSyncedAt) > 15 * 60 * 1000;
+
+          if (ipChanged || nameChanged || typeChanged || periodicHeartbeat) {
+            existingSession.device = dev;
+            existingSession.lastSyncedAt = nowTime;
+            if (existingSession.deviceId) {
+              await pocketbaseService.updateDevice(existingSession.deviceId, {
+                name: dev.name,
+                ip: dev.ip,
+                connection_type: dev.connection_type,
+                last_seen_at: isoNow
+              });
+            }
+          }
         }
       }
 
@@ -128,15 +162,13 @@ export class MonitorService {
             const lastSeenIso = new Date(session.lastSeenAt).toISOString();
             const duration = Math.max(0, Math.round((session.lastSeenAt - session.connectedAt) / 1000));
 
-            await pocketbaseService.upsertDevice({
-              mac,
-              name: session.device.name,
-              ip: session.device.ip,
-              connection_type: session.device.connection_type,
-              is_online: false,
-              last_disconnected_at: lastSeenIso,
-              last_seen_at: lastSeenIso
-            });
+            if (session.deviceId) {
+              await pocketbaseService.updateDevice(session.deviceId, {
+                is_online: false,
+                last_disconnected_at: lastSeenIso,
+                last_seen_at: lastSeenIso
+              });
+            }
 
             if (!this.isFirstRun) {
               await pocketbaseService.recordLog({
@@ -162,19 +194,11 @@ export class MonitorService {
   }
 
   async getStatus(): Promise<MonitorStatus> {
-    let total = 0;
-    try {
-      const all = await pocketbaseService.getAllDevices();
-      total = all.length;
-    } catch {
-      total = this.activeDevices.size;
-    }
-
     return {
       isRunning: this.isRunning,
       lastPollAt: this.lastPollAt,
       onlineCount: this.activeDevices.size,
-      totalDevices: total,
+      totalDevices: this.totalDevicesCount || this.activeDevices.size,
       pollIntervalMs: config.pollIntervalMs,
       routerReachable: this.routerReachable
     };

@@ -28,6 +28,14 @@ export class PocketBaseService {
     }
   }
 
+  async updateDevice(id: string, payload: any): Promise<DeviceRecord> {
+    return await this.client.collection('network_devices').update<DeviceRecord>(id, payload);
+  }
+
+  async createDevice(payload: any): Promise<DeviceRecord> {
+    return await this.client.collection('network_devices').create<DeviceRecord>(payload);
+  }
+
   async upsertDevice(data: {
     mac: string;
     name: string;
