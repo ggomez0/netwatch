@@ -174,7 +174,7 @@ export const DeviceDetailView: React.FC<Props> = ({ device, onBack, onEditAlias 
         i++;
       }
     }
-    return result.slice(0, 25);
+    return result.filter((s) => s.duration === null || s.duration > 0).slice(0, 25);
   }, [logs]);
 
   const totalOnline = logs.filter((l) => l.event_type === 'disconnected' && l.session_duration).reduce((a, l) => a + (l.session_duration ?? 0), 0);

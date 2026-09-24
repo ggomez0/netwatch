@@ -159,8 +159,12 @@ export class MonitorService {
           session.missedPolls += 1;
 
           if (session.missedPolls >= graceLimit) {
-            const lastSeenIso = new Date(session.lastSeenAt).toISOString();
-            const duration = Math.max(0, Math.round((session.lastSeenAt - session.connectedAt) / 1000));
+            const pollSec = Math.max(1, Math.round(config.pollIntervalMs / 1000));
+            const effectiveDisconnectTime = session.lastSeenAt === session.connectedAt
+              ? session.lastSeenAt + (pollSec * 1000)
+              : session.lastSeenAt;
+            const lastSeenIso = new Date(effectiveDisconnectTime).toISOString();
+            const duration = Math.max(pollSec, Math.round((effectiveDisconnectTime - session.connectedAt) / 1000));
 
             if (session.deviceId) {
               await pocketbaseService.updateDevice(session.deviceId, {

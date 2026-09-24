@@ -107,6 +107,14 @@ export class PocketBaseService {
     };
   }
 
+  async deleteLog(id: string): Promise<boolean> {
+    try {
+      return await this.client.collection('network_logs').delete(id);
+    } catch {
+      return false;
+    }
+  }
+
   async testConnection(): Promise<boolean> {
     try {
       const res = await this.client.health.check();
