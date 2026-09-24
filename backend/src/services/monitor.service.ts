@@ -21,6 +21,7 @@ export class MonitorService {
   private lastPollAt: string | null = null;
   private routerReachable = false;
   private isFirstRun = true;
+  private recentDisconnections: Map<string, { disconnectedAt: number; connectedAt: number; logId?: string }> = new Map();
 
   async start(): Promise<void> {
     if (this.isRunning) return;
@@ -63,6 +64,15 @@ export class MonitorService {
             lastSyncedAt: Date.now(),
             missedPolls: 0
           });
+        } else {
+          const discTime = d.last_disconnected_at ? new Date(d.last_disconnected_at).getTime() : 0;
+          const connTime = d.last_connected_at ? new Date(d.last_connected_at).getTime() : discTime;
+          if (discTime > 0 && (Date.now() - discTime) <= (15 * 60 * 1000)) {
+            this.recentDisconnections.set(d.mac, {
+              disconnectedAt: discTime,
+              connectedAt: connTime
+            });
+          }
         }
       }
     } catch {
@@ -84,49 +94,78 @@ export class MonitorService {
 
         if (!existingSession) {
           let deviceId = this.deviceIdMap.get(dev.mac);
+          const recentDisc = this.recentDisconnections.get(dev.mac);
+          const isQuickReconnection = recentDisc && (nowTime - recentDisc.disconnectedAt) <= (15 * 60 * 1000);
 
-          if (deviceId) {
-            await pocketbaseService.updateDevice(deviceId, {
-              is_online: true,
-              last_connected_at: isoNow,
-              last_seen_at: isoNow,
-              ip: dev.ip,
-              connection_type: dev.connection_type,
-              name: dev.name
+          if (isQuickReconnection && recentDisc) {
+            if (recentDisc.logId) {
+              await pocketbaseService.deleteLog(recentDisc.logId);
+            }
+            this.recentDisconnections.delete(dev.mac);
+
+            if (deviceId) {
+              await pocketbaseService.updateDevice(deviceId, {
+                is_online: true,
+                last_seen_at: isoNow,
+                ip: dev.ip,
+                connection_type: dev.connection_type,
+                name: dev.name
+              });
+            }
+
+            this.activeDevices.set(dev.mac, {
+              device: dev,
+              deviceId: deviceId || '',
+              connectedAt: recentDisc.connectedAt,
+              lastSeenAt: nowTime,
+              lastSyncedAt: nowTime,
+              missedPolls: 0
             });
           } else {
-            const created = await pocketbaseService.upsertDevice({
-              mac: dev.mac,
-              name: dev.name,
-              ip: dev.ip,
-              connection_type: dev.connection_type,
-              is_online: true,
-              last_connected_at: isoNow,
-              last_seen_at: isoNow
-            });
-            deviceId = created.id;
-            this.deviceIdMap.set(dev.mac, deviceId);
-            this.totalDevicesCount += 1;
-          }
+            this.recentDisconnections.delete(dev.mac);
+            if (deviceId) {
+              await pocketbaseService.updateDevice(deviceId, {
+                is_online: true,
+                last_connected_at: isoNow,
+                last_seen_at: isoNow,
+                ip: dev.ip,
+                connection_type: dev.connection_type,
+                name: dev.name
+              });
+            } else {
+              const created = await pocketbaseService.upsertDevice({
+                mac: dev.mac,
+                name: dev.name,
+                ip: dev.ip,
+                connection_type: dev.connection_type,
+                is_online: true,
+                last_connected_at: isoNow,
+                last_seen_at: isoNow
+              });
+              deviceId = created.id;
+              this.deviceIdMap.set(dev.mac, deviceId);
+              this.totalDevicesCount += 1;
+            }
 
-          this.activeDevices.set(dev.mac, {
-            device: dev,
-            deviceId: deviceId || '',
-            connectedAt: nowTime,
-            lastSeenAt: nowTime,
-            lastSyncedAt: nowTime,
-            missedPolls: 0
-          });
-
-          if (!this.isFirstRun) {
-            await pocketbaseService.recordLog({
-              mac: dev.mac,
-              name: dev.name,
-              ip: dev.ip,
-              connection_type: dev.connection_type,
-              event_type: 'connected',
-              timestamp: isoNow
+            this.activeDevices.set(dev.mac, {
+              device: dev,
+              deviceId: deviceId || '',
+              connectedAt: nowTime,
+              lastSeenAt: nowTime,
+              lastSyncedAt: nowTime,
+              missedPolls: 0
             });
+
+            if (!this.isFirstRun) {
+              await pocketbaseService.recordLog({
+                mac: dev.mac,
+                name: dev.name,
+                ip: dev.ip,
+                connection_type: dev.connection_type,
+                event_type: 'connected',
+                timestamp: isoNow
+              });
+            }
           }
         } else {
           existingSession.lastSeenAt = nowTime;
@@ -174,8 +213,9 @@ export class MonitorService {
               });
             }
 
+            let discLogId: string | undefined;
             if (!this.isFirstRun) {
-              await pocketbaseService.recordLog({
+              const rec = await pocketbaseService.recordLog({
                 mac,
                 name: session.device.name,
                 ip: session.device.ip,
@@ -184,7 +224,14 @@ export class MonitorService {
                 timestamp: lastSeenIso,
                 session_duration: duration
               });
+              discLogId = rec?.id;
             }
+
+            this.recentDisconnections.set(mac, {
+              disconnectedAt: effectiveDisconnectTime,
+              connectedAt: session.connectedAt,
+              logId: discLogId
+            });
 
             this.activeDevices.delete(mac);
           }

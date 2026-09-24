@@ -6,7 +6,7 @@ dotenv.config();
 const pb = new PocketBase(process.env.POCKETBASE_URL);
 pb.autoCancellation(false);
 
-const MAX_GAP_MS = 300 * 1000;
+const MAX_GAP_MS = 15 * 60 * 1000;
 
 async function consolidate() {
   const devices = await pb.collection('network_devices').getFullList();
