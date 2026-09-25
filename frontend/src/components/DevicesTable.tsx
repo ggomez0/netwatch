@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Search, Edit3, Wifi, Radio, HardDrive, Laptop, ChevronRight } from 'lucide-react';
+import { Search, Edit3, Wifi, Radio, HardDrive, Laptop, ChevronRight, Ban, ShieldCheck } from 'lucide-react';
 import { DeviceRecord } from '../types';
 
 interface Props {
   devices: DeviceRecord[];
   onEditAlias: (device: DeviceRecord) => void;
   onViewHistory: (device: DeviceRecord) => void;
+  onToggleBlock?: (id: string, is_blocked: boolean) => void;
 }
 
 function ConnectionBadge({ type }: { type: string }) {
@@ -51,13 +52,19 @@ function formatDate(isoStr?: string) {
   });
 }
 
-export const DevicesTable: React.FC<Props> = ({ devices, onEditAlias, onViewHistory }) => {
+export const DevicesTable: React.FC<Props> = ({ devices, onEditAlias, onViewHistory, onToggleBlock }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterMode, setFilterMode] = useState<'all' | 'online' | 'offline'>('all');
+  const [filterMode, setFilterMode] = useState<'all' | 'online' | 'offline' | 'blocked'>('all');
 
   const filtered = devices.filter((d) => {
-    const ok =
-      filterMode === 'all' ? true : filterMode === 'online' ? d.is_online : !d.is_online;
+    let ok = true;
+    if (filterMode === 'online') {
+      ok = !!d.is_online && !d.is_blocked;
+    } else if (filterMode === 'offline') {
+      ok = !d.is_online && !d.is_blocked;
+    } else if (filterMode === 'blocked') {
+      ok = !!d.is_blocked;
+    }
     const q = searchTerm.toLowerCase();
     return (
       ok &&
@@ -68,8 +75,9 @@ export const DevicesTable: React.FC<Props> = ({ devices, onEditAlias, onViewHist
     );
   });
 
-  const onlineCount = devices.filter((d) => d.is_online).length;
-  const offlineCount = devices.filter((d) => !d.is_online).length;
+  const onlineCount = devices.filter((d) => d.is_online && !d.is_blocked).length;
+  const offlineCount = devices.filter((d) => !d.is_online && !d.is_blocked).length;
+  const blockedCount = devices.filter((d) => d.is_blocked).length;
 
   return (
     <div className="space-y-4">
@@ -80,6 +88,7 @@ export const DevicesTable: React.FC<Props> = ({ devices, onEditAlias, onViewHist
               { id: 'all', label: `Todos (${devices.length})` },
               { id: 'online', label: `Online (${onlineCount})` },
               { id: 'offline', label: `Offline (${offlineCount})` },
+              { id: 'blocked', label: `Bloqueados (${blockedCount})` },
             ] as const
           ).map((f) => (
             <button
@@ -136,16 +145,26 @@ export const DevicesTable: React.FC<Props> = ({ devices, onEditAlias, onViewHist
                   className="border-b border-[#111] hover:bg-[#0d0d0d] transition-colors cursor-pointer group"
                 >
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                          device.is_online ? 'bg-emerald-400' : 'bg-[#333]'
-                        }`}
-                      />
-                      <span className={`text-xs ${device.is_online ? 'text-emerald-400' : 'text-[#555]'}`}>
-                        {device.is_online ? 'Online' : 'Offline'}
-                      </span>
-                    </div>
+                    {device.is_blocked ? (
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full flex-shrink-0 bg-rose-500" />
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                          <Ban className="w-3 h-3" />
+                          Bloqueado
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                            device.is_online ? 'bg-emerald-400' : 'bg-[#333]'
+                          }`}
+                        />
+                        <span className={`text-xs ${device.is_online ? 'text-emerald-400' : 'text-[#555]'}`}>
+                          {device.is_online ? 'Online' : 'Offline'}
+                        </span>
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-col">
@@ -176,6 +195,19 @@ export const DevicesTable: React.FC<Props> = ({ devices, onEditAlias, onViewHist
                       className="flex items-center justify-end gap-1"
                       onClick={(e) => e.stopPropagation()}
                     >
+                      {onToggleBlock && (
+                        <button
+                          onClick={() => onToggleBlock(device.id, !device.is_blocked)}
+                          className={`p-1.5 rounded transition-colors ${
+                            device.is_blocked
+                              ? 'hover:bg-emerald-500/10 text-rose-400 hover:text-emerald-400'
+                              : 'hover:bg-rose-500/10 text-[#555] hover:text-rose-400'
+                          }`}
+                          title={device.is_blocked ? 'Desbloquear dispositivo' : 'Marcar como bloqueado en router'}
+                        >
+                          {device.is_blocked ? <ShieldCheck className="w-3.5 h-3.5" /> : <Ban className="w-3.5 h-3.5" />}
+                        </button>
+                      )}
                       <button
                         onClick={() => onEditAlias(device)}
                         className="p-1.5 rounded hover:bg-[#1a1a1a] text-[#555] hover:text-[#aaa] transition-colors"

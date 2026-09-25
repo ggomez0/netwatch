@@ -35,6 +35,12 @@ async function runTests() {
   const updatedDevice = await pocketbaseService.updateDeviceAlias(createdDevice.id, 'Alias Test');
   assert.equal(updatedDevice.custom_alias, 'Alias Test');
 
+  const blockedDevice = await pocketbaseService.updateDeviceBlocked(createdDevice.id, true);
+  assert.equal(blockedDevice.is_blocked, true);
+
+  const unblockedDevice = await pocketbaseService.updateDeviceBlocked(createdDevice.id, false);
+  assert.equal(unblockedDevice.is_blocked, false);
+
   const logEntry = await pocketbaseService.recordLog({
     mac: testMac,
     name: 'DispositivoDePrueba',

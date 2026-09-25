@@ -36,6 +36,16 @@ export async function updateDeviceAlias(id: string, alias: string): Promise<Devi
   return res.json();
 }
 
+export async function updateDeviceBlocked(id: string, is_blocked: boolean): Promise<DeviceRecord> {
+  const res = await fetch(`${API_BASE}/devices/${id}/blocked`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ is_blocked })
+  });
+  if (!res.ok) throw new Error('Error al actualizar estado de bloqueo');
+  return res.json();
+}
+
 export async function triggerManualSync(): Promise<{ success: boolean; status: MonitorStatus }> {
   const res = await fetch(`${API_BASE}/sync`, { method: 'POST' });
   if (!res.ok) throw new Error('Error al forzar sincronización');

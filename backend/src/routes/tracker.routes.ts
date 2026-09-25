@@ -6,6 +6,7 @@ const router = Router();
 router.get('/status', (req, res) => trackerController.getStatus(req, res));
 router.get('/devices', (req, res) => trackerController.getDevices(req, res));
 router.patch('/devices/:id/alias', (req, res) => trackerController.updateAlias(req, res));
+router.patch('/devices/:id/blocked', (req, res) => trackerController.updateBlocked(req, res));
 router.get('/logs', (req, res) => trackerController.getLogs(req, res));
 router.post('/sync', (req, res) => trackerController.triggerSync(req, res));
 

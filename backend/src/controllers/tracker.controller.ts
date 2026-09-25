@@ -32,6 +32,20 @@ export class TrackerController {
     }
   }
 
+  async updateBlocked(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { is_blocked } = req.body;
+      const updated = await pocketbaseService.updateDeviceBlocked(id, !!is_blocked);
+      if (updated?.mac) {
+        monitorService.setDeviceBlocked(updated.mac, !!is_blocked);
+      }
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+
   async getLogs(req: Request, res: Response): Promise<void> {
     try {
       const page = parseInt(req.query.page as string || '1', 10);

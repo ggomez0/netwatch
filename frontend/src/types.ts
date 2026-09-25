@@ -6,6 +6,7 @@ export interface DeviceRecord {
   ip: string;
   connection_type: string;
   is_online: boolean;
+  is_blocked?: boolean;
   last_connected_at?: string;
   last_disconnected_at?: string;
   last_seen_at?: string;

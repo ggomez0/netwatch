@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Network, RefreshCw, Layers, History, Wifi } from 'lucide-react';
 import { DeviceRecord, MonitorStatus, NetworkLogRecord } from './types';
-import { fetchDevices, fetchLogs, fetchStatus, triggerManualSync, updateDeviceAlias } from './api';
+import { fetchDevices, fetchLogs, fetchStatus, triggerManualSync, updateDeviceAlias, updateDeviceBlocked } from './api';
 import { StatsCards } from './components/StatsCards';
 import { DevicesTable } from './components/DevicesTable';
 import { ActivityLog } from './components/ActivityLog';
@@ -69,6 +69,14 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleToggleBlock = async (id: string, is_blocked: boolean) => {
+    await updateDeviceBlocked(id, is_blocked);
+    await loadData();
+    if (detailDevice?.id === id) {
+      setDetailDevice((prev) => (prev ? { ...prev, is_blocked, is_online: is_blocked ? false : prev.is_online } : null));
+    }
+  };
+
   const openAliasModal = (device: DeviceRecord) => {
     setSelectedDevice(device);
     setIsAliasModalOpen(true);
@@ -82,6 +90,7 @@ export const App: React.FC = () => {
           device={live}
           onBack={() => setDetailDevice(null)}
           onEditAlias={openAliasModal}
+          onToggleBlock={handleToggleBlock}
         />
         <AliasModal
           device={selectedDevice}
@@ -160,6 +169,7 @@ export const App: React.FC = () => {
             devices={devices}
             onEditAlias={openAliasModal}
             onViewHistory={setDetailDevice}
+            onToggleBlock={handleToggleBlock}
           />
         ) : (
           <ActivityLog

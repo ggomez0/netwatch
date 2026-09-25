@@ -22,6 +22,7 @@ export class MonitorService {
   private routerReachable = false;
   private isFirstRun = true;
   private recentDisconnections: Map<string, { disconnectedAt: number; connectedAt: number; logId?: string }> = new Map();
+  private blockedMacs: Set<string> = new Set();
 
   async start(): Promise<void> {
     if (this.isRunning) return;
@@ -47,7 +48,10 @@ export class MonitorService {
       this.totalDevicesCount = knownDevices.length;
       for (const d of knownDevices) {
         this.deviceIdMap.set(d.mac, d.id);
-        if (d.is_online) {
+        if (d.is_blocked) {
+          this.blockedMacs.add(d.mac);
+        }
+        if (d.is_online && !d.is_blocked) {
           const connectedTime = d.last_connected_at ? new Date(d.last_connected_at).getTime() : Date.now();
           const lastSeenTime = d.last_seen_at ? new Date(d.last_seen_at).getTime() : Date.now();
           this.activeDevices.set(d.mac, {
@@ -90,6 +94,22 @@ export class MonitorService {
 
       for (const dev of currentDevices) {
         currentMacs.add(dev.mac);
+
+        if (this.blockedMacs.has(dev.mac)) {
+          const deviceId = this.deviceIdMap.get(dev.mac);
+          if (deviceId) {
+            await pocketbaseService.updateDevice(deviceId, {
+              is_online: false,
+              is_blocked: true,
+              last_seen_at: isoNow,
+              ip: dev.ip,
+              connection_type: dev.connection_type,
+              name: dev.name
+            });
+          }
+          continue;
+        }
+
         const existingSession = this.activeDevices.get(dev.mac);
 
         if (!existingSession) {
@@ -244,11 +264,31 @@ export class MonitorService {
     }
   }
 
+  setDeviceBlocked(mac: string, isBlocked: boolean): void {
+    if (isBlocked) {
+      this.blockedMacs.add(mac);
+      this.activeDevices.delete(mac);
+      this.recentDisconnections.delete(mac);
+    } else {
+      this.blockedMacs.delete(mac);
+    }
+  }
+
+  isDeviceBlocked(mac: string): boolean {
+    return this.blockedMacs.has(mac);
+  }
+
   async getStatus(): Promise<MonitorStatus> {
+    let unblockedOnlineCount = 0;
+    for (const mac of this.activeDevices.keys()) {
+      if (!this.blockedMacs.has(mac)) {
+        unblockedOnlineCount++;
+      }
+    }
     return {
       isRunning: this.isRunning,
       lastPollAt: this.lastPollAt,
-      onlineCount: this.activeDevices.size,
+      onlineCount: unblockedOnlineCount,
       totalDevices: this.totalDevicesCount || this.activeDevices.size,
       pollIntervalMs: config.pollIntervalMs,
       routerReachable: this.routerReachable

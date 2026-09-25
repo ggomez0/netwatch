@@ -72,6 +72,12 @@ export class PocketBaseService {
     });
   }
 
+  async updateDeviceBlocked(id: string, is_blocked: boolean): Promise<DeviceRecord> {
+    return await this.client.collection('network_devices').update<DeviceRecord>(id, {
+      is_blocked
+    });
+  }
+
   async recordLog(data: {
     mac: string;
     name: string;

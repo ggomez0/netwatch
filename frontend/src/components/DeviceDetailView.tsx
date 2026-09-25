@@ -11,7 +11,9 @@ import {
   Activity,
   Calendar,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Ban,
+  ShieldCheck
 } from 'lucide-react';
 import {
   AreaChart,
@@ -29,6 +31,7 @@ interface Props {
   device: DeviceRecord;
   onBack: () => void;
   onEditAlias: (device: DeviceRecord) => void;
+  onToggleBlock?: (id: string, is_blocked: boolean) => void;
 }
 
 interface RawSession {
@@ -130,7 +133,7 @@ const ChartTooltip = ({ active, payload }: any) => {
   );
 };
 
-export const DeviceDetailView: React.FC<Props> = ({ device, onBack, onEditAlias }) => {
+export const DeviceDetailView: React.FC<Props> = ({ device, onBack, onEditAlias, onToggleBlock }) => {
   const [logs, setLogs] = useState<NetworkLogRecord[]>([]);
   const [totalLogs, setTotalLogs] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -382,6 +385,28 @@ export const DeviceDetailView: React.FC<Props> = ({ device, onBack, onEditAlias 
             Volver
           </button>
           <div className="flex items-center gap-2">
+            {onToggleBlock && (
+              <button
+                onClick={() => onToggleBlock(device.id, !device.is_blocked)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs transition-colors ${
+                  device.is_blocked
+                    ? 'bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
+                    : 'bg-rose-500/10 hover:bg-rose-500/20 border-rose-500/30 text-rose-400'
+                }`}
+              >
+                {device.is_blocked ? (
+                  <>
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    Desbloquear
+                  </>
+                ) : (
+                  <>
+                    <Ban className="w-3.5 h-3.5" />
+                    Bloquear en router
+                  </>
+                )}
+              </button>
+            )}
             <button
               onClick={() => onEditAlias(device)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#111] hover:bg-[#1a1a1a] border border-[#2a2a2a] text-xs text-[#888] hover:text-white transition-colors"
@@ -404,20 +429,27 @@ export const DeviceDetailView: React.FC<Props> = ({ device, onBack, onEditAlias 
           <div>
             <div className="flex items-center gap-3 mb-1">
               <h1 className="text-2xl font-bold text-white">{displayName}</h1>
-              <span
-                className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full border ${
-                  device.is_online
-                    ? 'text-emerald-400 border-emerald-400/30 bg-emerald-400/8'
-                    : 'text-[#555] border-[#2a2a2a] bg-[#0a0a0a]'
-                }`}
-              >
+              {device.is_blocked ? (
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-0.5 rounded-full border text-rose-400 border-rose-500/30 bg-rose-500/10">
+                  <Ban className="w-3 h-3 text-rose-400" />
+                  Bloqueado en router
+                </span>
+              ) : (
                 <span
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    device.is_online ? 'bg-emerald-400 animate-pulse' : 'bg-[#444]'
+                  className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full border ${
+                    device.is_online
+                      ? 'text-emerald-400 border-emerald-400/30 bg-emerald-400/8'
+                      : 'text-[#555] border-[#2a2a2a] bg-[#0a0a0a]'
                   }`}
-                />
-                {device.is_online ? 'En línea' : 'Desconectado'}
-              </span>
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      device.is_online ? 'bg-emerald-400 animate-pulse' : 'bg-[#444]'
+                    }`}
+                  />
+                  {device.is_online ? 'En línea' : 'Desconectado'}
+                </span>
+              )}
             </div>
             <div className="flex flex-wrap items-center gap-4 text-xs text-[#555]">
               <button
